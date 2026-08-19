@@ -8,6 +8,8 @@ from src.auto_presenter.prompt_generator import PromptGenerator
 from src.auto_presenter.image_generator import ImageGeneratorClient
 from src.auto_presenter.pipeline import PipelineOrchestrator
 from src.auto_presenter.presentation_engine import PresentationEngine
+from src.auto_presenter.script_generator import ScriptGenerator
+from src.auto_presenter.audio_generator import VoiceXClient
 
 logger = structlog.get_logger(__name__)
 
@@ -27,9 +29,17 @@ async def main():
     presentation_engine = PresentationEngine(llm_client)
     prompt_gen = PromptGenerator(llm_client)
     image_client = ImageGeneratorClient()
+    script_gen = ScriptGenerator(llm_client)
+    audio_client = VoiceXClient()
     
     output_dir = Path("./output_images")
-    orchestrator = PipelineOrchestrator(prompt_engine=prompt_gen, image_client=image_client, output_dir=output_dir)
+    orchestrator = PipelineOrchestrator(
+        prompt_engine=prompt_gen, 
+        image_client=image_client, 
+        output_dir=output_dir,
+        script_engine=script_gen,
+        audio_client=audio_client
+    )
     
     topic = "Docker and Containerization"
     model_name = "meta/llama-3.1-8b-instruct"
@@ -45,7 +55,12 @@ async def main():
         f.write(presentation.model_dump_json(indent=4))
     
     # 3. Run the concurrent pipeline using the batched Prompt Engine & Image Queue
-    await orchestrator.process_presentation(presentation=presentation, model_name=model_name)
+    voice_instruct = "female, professional, high pitch, clear articulation"
+    await orchestrator.process_presentation(
+        presentation=presentation, 
+        voice_instruct=voice_instruct,
+        model_name=model_name
+    )
     
 if __name__ == "__main__":
     asyncio.run(main())
