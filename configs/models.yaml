@@ -1,0 +1,41 @@
+providers:
+  openai:
+    base_url: "https://api.openai.com/v1"
+    api_key_env_var: "OPENAI_API_KEY"
+    model_name: "gpt-4o"
+  anthropic:
+    base_url: "https://api.anthropic.com/v1"
+    api_key_env_var: "ANTHROPIC_API_KEY"
+    model_name: "claude-3-opus-20240229"
+  openrouter:
+    base_url: "https://openrouter.ai/api/v1"
+    api_key_env_var: "OPEN_ROUTER_API_KEY"
+    model_name: "openai/gpt-oss-20b:free"
+  self_hosted:
+    base_url: "http://localhost:8001/v1"
+    api_key_env_var: null
+    model_name: "local-model"
+  fast:
+    base_url: "https://api.openai.com/v1"
+    api_key_env_var: "OPENAI_API_KEY"
+    model_name: "gpt-4o-mini"
+  oxlo:
+    base_url: "https://api.oxlo.ai/v1"
+    api_key_env_var: "OXLO_API_KEY"
+    model_name: "Llama-3.2-3B"
+  grok:
+    base_url: "https://api.x.ai/v1"
+    api_key_env_var: "GROK_API_KEY"
+    model_name: "grok-3-mini-fast"
+  nvidia:
+    base_url: "https://integrate.api.nvidia.com/v1"
+    api_key_env_var: "NVIDIA_API_KEY"
+    model_name: "meta/llama-3.1-8b-instruct"
+  groq:
+    base_url: "https://api.groq.com/openai/v1"
+    api_key_env_var: "GROQ_API_KEY"
+    model_name: "llama-3.1-8b-instant"
+  together:
+    base_url: "https://api.together.xyz/v1"
+    api_key_env_var: "TOGETHER_API_KEY"
+    model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"
