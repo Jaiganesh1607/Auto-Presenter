@@ -13,12 +13,11 @@ class ScriptGenerator:
             "Your task is to take the provided raw 'speaker_notes' and rewrite them into a natural, "
             "highly engaging spoken script tailored for an AI avatar.\n"
             "CRITICAL RULES:\n"
-            "1. EXPRESSIONS: You MUST strategically inject non-verbal expression tags directly into the text where natural. "
-            "Available tags: [laughter], [sigh], [question-en], [surprise-ah], [dissatisfaction-hnn], [confirmation-en].\n"
+            "1. EXPRESSIONS: You MUST NOT use any non-verbal expression tags (like [laughter], [sigh], etc). SadTalker cannot animate them properly. Generate pure speech only.\n"
             "2. PACING: Keep sentences short and conversational.\n"
-            "3. EMOTION: Determine the overall emotional tone of this slide. You must pick exactly ONE of: Neutral, Happy, Sad, Calm, Whisper.\n"
+            "3. EMOTION: Determine the overall emotional tone of this slide. You MUST strictly output 'Neutral'. (Other emotions cause audio artifacts for this specific avatar).\n"
             "4. Output format: You MUST return a strictly valid JSON object with EXACTLY two keys:\n"
-            "   - 'script_text' (string): The refined text with expression tags.\n"
+            "   - 'script_text' (string): The refined text (pure speech, NO tags).\n"
             "   - 'emotion' (string): The selected emotional tone."
         )
 

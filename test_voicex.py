@@ -11,14 +11,16 @@ async def test_voicex_standalone():
     
     client = VoiceXClient()
     
-    # 1. Provide a mock refined script with VoiceX expressions
-    mock_text = "Welcome to the Auto-Presenter! [laughter] I am so excited to be here today. Let's get started!"
+    # 1. Provide a mock refined script WITHOUT expressions (for clean SadTalker animation)
+    mock_text = "Welcome to the Auto-Presenter! I am so excited to be here today. Let's get started!"
     
     # 2. Pick an emotion that the VoiceX backend supports (Neutral, Happy, Sad, Calm, Whisper)
-    emotion = "Happy"
+    # Neutral has the optimal default speed (0.85). 'Calm' slows it down to 0.75 which causes robotic artifacts.
+    emotion = "Neutral"
     
     # 3. Define the voice persona
-    instruct = "female, high pitch, energetic and professional"
+    gender = "female"
+    age = 30
     
     # 4. Set output path
     output_dir = Path("./output_images")
@@ -28,7 +30,8 @@ async def test_voicex_standalone():
     print(f"Sending request to VoiceX Microservice at: {client.endpoint}")
     print(f"Text: {mock_text}")
     print(f"Emotion: {emotion}")
-    print(f"Instruct: {instruct}")
+    print(f"Gender: {gender}")
+    print(f"Age: {age}")
     print("-" * 40)
     print("Generating audio... (This might take a minute on the first run to load the model into VRAM)")
     
@@ -36,7 +39,8 @@ async def test_voicex_standalone():
         # Call the microservice
         result_path = await client.generate_audio(
             text=mock_text,
-            instruct=instruct,
+            gender=gender,
+            age=age,
             emotion=emotion,
             output_path=output_path
         )

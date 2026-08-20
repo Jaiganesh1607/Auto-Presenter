@@ -1,24 +1,24 @@
-# OmniVoice Studio — Backend Dependencies
+# OmniVoice Studio - Backend Dependencies
 
-# ── OmniVoice (the TTS engine) ─────────────────────────────────────────────────
+# -- OmniVoice (the TTS engine) --
 # Install ONE of the following (uncomment as needed):
 omnivoice                          # Stable release from PyPI
 # omnivoice @ git+https://github.com/k2-fsa/OmniVoice.git   # Latest from GitHub
 
-# ── Web framework ──────────────────────────────────────────────────────────────
+# -- Web framework --
 fastapi>=0.111.0
 uvicorn[standard]>=0.29.0
 python-multipart>=0.0.9
 
-# ── Audio I/O ──────────────────────────────────────────────────────────────────
+# -- Audio I/O --
 soundfile>=0.12.1
 numpy>=1.26.0
 
-# ── PyTorch (install separately per NVIDIA/Apple/CPU instructions) ─────────────
+# -- PyTorch (install separately per NVIDIA/Apple/CPU instructions) --
 # See: https://pytorch.org/get-started/locally/
-# torch>=2.3.0  ← do NOT install via pip in Colab; it is pre-installed
+# torch>=2.3.0  <- do NOT install via pip in Colab; it is pre-installed
 
-# ── Utilities ──────────────────────────────────────────────────────────────────
+# -- Utilities --
 pydantic>=2.7.0
 transformers>=4.40.0
 accelerate>=0.29.0

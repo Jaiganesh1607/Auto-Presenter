@@ -207,6 +207,40 @@ async def voice_design(
 
 
 # ---------------------------------------------------------------------------
+# Routes — Raw Voice
+# ---------------------------------------------------------------------------
+@app.post("/api/raw-voice")
+async def raw_voice(
+    text: str = Form(...),
+    instruct: str = Form("female, professional, clear articulation"),
+    speed: float = Form(0.95)
+):
+    """
+    Directly hits the OmniVoice model without TagParser splitting or concatenation.
+    This eliminates audio popping/noise and allows fully custom instruct strings.
+    """
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="text must not be empty.")
+    
+    logger.info("raw-voice | instruct=%s speed=%s", instruct, speed)
+    
+    engine = OmniVoiceEngine.get_instance()
+    try:
+        # OmniVoice handles inline tags like [laughter] natively in one pass!
+        wav = engine.synthesize_voice_design(
+            text=text,
+            instruct=instruct,
+            speed=speed,
+            num_step=32 # High quality
+        )
+    except Exception as exc:
+        logger.exception("raw-voice failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return _wav_response(wav)
+
+
+# ---------------------------------------------------------------------------
 # Routes — Voice Clone
 # ---------------------------------------------------------------------------
 @app.post("/api/voice-clone")

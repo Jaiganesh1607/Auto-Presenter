@@ -52,7 +52,7 @@ pipe = ZImagePipeline.from_pretrained(
     torch_dtype=torch.bfloat16,
     low_cpu_mem_usage=True,
 )
-pipe.enable_sequential_cpu_offload()
+pipe.enable_model_cpu_offload()
 print("Model loaded successfully!")
 
 # 3. Initialize FastAPI

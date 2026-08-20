@@ -1,6 +1,7 @@
 import asyncio
 import os
 import structlog
+import argparse
 from pathlib import Path
 from src.content_engine.llm.client import LLMClient
 from src.content_engine.llm.providers import get_provider
@@ -10,10 +11,12 @@ from src.auto_presenter.pipeline import PipelineOrchestrator
 from src.auto_presenter.presentation_engine import PresentationEngine
 from src.auto_presenter.script_generator import ScriptGenerator
 from src.auto_presenter.audio_generator import VoiceXClient
+from src.auto_presenter.video_generator import SadTalkerClient
+from src.auto_presenter.pptx_composer import PPTXComposerClient
 
 logger = structlog.get_logger(__name__)
 
-async def main():
+async def main(topic: str, num_slides: int, voice_gender: str):
     # Load configuration
     from dotenv import load_dotenv
     load_dotenv()
@@ -27,26 +30,27 @@ async def main():
     provider = get_provider("nvidia")
     llm_client = LLMClient(provider=provider)
     presentation_engine = PresentationEngine(llm_client)
-    prompt_gen = PromptGenerator(llm_client)
+    prompt_engine = PromptGenerator(llm_client)
+    script_engine = ScriptGenerator(llm_client)
     image_client = ImageGeneratorClient()
-    script_gen = ScriptGenerator(llm_client)
     audio_client = VoiceXClient()
+    video_client = SadTalkerClient()
     
     output_dir = Path("./output_images")
     orchestrator = PipelineOrchestrator(
-        prompt_engine=prompt_gen, 
-        image_client=image_client, 
-        output_dir=output_dir,
-        script_engine=script_gen,
-        audio_client=audio_client
+        prompt_engine=prompt_engine,
+        script_engine=script_engine,
+        image_client=image_client,
+        audio_client=audio_client,
+        video_client=video_client,
+        output_dir=output_dir
     )
     
-    topic = "Docker and Containerization"
     model_name = "meta/llama-3.1-8b-instruct"
     
     # 2. Get the real outline via the Presentation Engine (Phase 1.5)
     logger.info("generating_presentation_outline", topic=topic)
-    presentation = await presentation_engine.generate_outline(topic=topic, model_name=model_name, num_slides=3)
+    presentation = await presentation_engine.generate_outline(topic=topic, model_name=model_name, num_slides=num_slides)
     
     # Save the intermediate presentation outline to output/
     meta_dir = Path("./output")
@@ -54,13 +58,25 @@ async def main():
     with open(meta_dir / "presentation_outline.json", "w") as f:
         f.write(presentation.model_dump_json(indent=4))
     
-    # 3. Run the concurrent pipeline using the batched Prompt Engine & Image Queue
-    voice_instruct = "female, professional, high pitch, clear articulation"
-    await orchestrator.process_presentation(
-        presentation=presentation, 
-        voice_instruct=voice_instruct,
+    # 3. Run the concurrent pipeline using the batched Prompt Engine
+    slide_results, final_output_dir = await orchestrator.process_presentation(
+        presentation=presentation,
+        voice_gender=voice_gender,
+        voice_age=30,
         model_name=model_name
     )
     
+    # Generate PPTX
+    pptx_client = PPTXComposerClient()
+    pptx_client.build_presentation(presentation, slide_results, final_output_dir)
+    
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(description="Auto-Presenter Pipeline CLI")
+    parser.add_argument("--topic", type=str, default="Docker and Containerization", help="The topic of the presentation")
+    parser.add_argument("--slides", type=int, default=3, help="Number of slides to generate")
+    parser.add_argument("--gender", type=str, choices=["male", "female"], default="female", help="Voice and Avatar gender")
+    
+    args = parser.parse_args()
+    
+    # Run the main pipeline
+    asyncio.run(main(topic=args.topic, num_slides=args.slides, voice_gender=args.gender))
