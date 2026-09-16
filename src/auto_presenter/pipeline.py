@@ -45,27 +45,23 @@ class PipelineOrchestrator:
             logger.error("image_generation_failed", slide_number=slide_num, error=str(e))
             return None
 
-    async def process_video_pipeline(self, slide_num: int, speaker_notes: str, model_name: str, voice_gender: str, voice_age: int, slide_dir: Path):
-        """Swimlane B: Generates the script, the audio, and eventually the avatar video"""
-        if not self.script_engine or not self.audio_client or not self.video_client:
+    async def process_video_pipeline(self, slide_num: int, script_data: dict, voice_gender: str, voice_age: int, slide_dir: Path):
+        """Swimlane B: Generates the audio and eventually the avatar video from the pre-generated master script"""
+        if not self.audio_client or not self.video_client:
             logger.warning("video_pipeline_skipped_missing_engines", slide_number=slide_num)
             return None
 
         try:
-            logger.info("starting_script_refinement", slide_number=slide_num)
-            # 1. Refine Script & get Emotion
-            script_data = await self.script_engine.generate_script(speaker_notes, model_name=model_name)
-            final_script = script_data.get("script_text", speaker_notes)
-            emotion = script_data.get("emotion", "Neutral")
+            # 1. Extract script data
+            final_script = script_data.get("script_text", "")
+            instruct = script_data.get("instruct", f"{voice_gender}, professional")
             
             # 2. Generate Audio
             audio_output_path = slide_dir / f"slide_{slide_num}_voice.wav"
-            logger.info("starting_audio_generation", slide_number=slide_num, emotion=emotion)
+            logger.info("starting_audio_generation", slide_number=slide_num, instruct=instruct)
             await self.audio_client.generate_audio(
                 text=final_script, 
-                gender=voice_gender, 
-                age=voice_age, 
-                emotion=emotion, 
+                instruct=instruct, 
                 output_path=audio_output_path
             )
             
@@ -91,19 +87,34 @@ class PipelineOrchestrator:
             logger.error("video_pipeline_failed", slide_number=slide_num, error=repr(e))
             return None
 
-    async def process_single_slide(self, slide, final_prompt: str, model_name: str, voice_gender: str, voice_age: int, slide_dir: Path):
+    async def process_single_slide(self, slide, script_data: dict, model_name: str, voice_gender: str, voice_age: int, slide_dir: Path):
         """Orchestrates both swimlanes for a single slide concurrently"""
         logger.info("starting_slide_pipelines", slide_number=slide.slide_number)
         
+        # 1. Generate prompt specifically for this slide to maximize creativity
+        try:
+            final_prompt = await self.prompt_engine.generate_prompt_for_slide(slide, model_name)
+            # Save the prompt for debugging
+            with open(slide_dir / f"slide_{slide.slide_number}_prompt.txt", "w") as f:
+                f.write(final_prompt)
+        except Exception as e:
+            logger.error("prompt_generation_failed", slide_number=slide.slide_number, error=str(e))
+            final_prompt = None
+            
         # Fire both swimlanes simultaneously
         results = await asyncio.gather(
             self.process_image_pipeline(slide.slide_number, final_prompt, slide_dir),
-            self.process_video_pipeline(slide.slide_number, slide.speaker_notes, model_name, voice_gender, voice_age, slide_dir)
+            self.process_video_pipeline(slide.slide_number, script_data, voice_gender, voice_age, slide_dir)
         )
         
         image_path, video_path = results
         logger.info("completed_slide_pipelines", slide_number=slide.slide_number)
-        return slide.slide_number, image_path, video_path
+        
+        # We also need to pass the avatar image back so PPTX can use it as a poster frame
+        avatar_dir = Path("avatar_images")
+        avatar_image_path = avatar_dir / f"{voice_gender}.png"
+        
+        return slide.slide_number, image_path, video_path, avatar_image_path
         
     async def process_presentation(self, presentation: PresentationOutline, voice_gender: str, voice_age: int, model_name: str = "gpt-4o"):
         """
@@ -119,32 +130,32 @@ class PipelineOrchestrator:
         
         logger.info("starting_presentation_pipeline", total_slides=len(presentation.slides), out_dir=str(presentation_dir))
         
-        # Step 1: Batch generate Z-Image prompts to save LLM latency
+        # Step 0: Generate the cohesive master script for all slides
         try:
-            logger.info("generating_all_prompts_batch")
-            prompts_list = await self.prompt_engine.generate_prompts_batch(
-                slides=presentation.slides, 
+            logger.info("generating_master_script_batch")
+            master_scripts = await self.script_engine.generate_master_script(
+                presentation=presentation,
+                voice_gender=voice_gender,
+                voice_age=voice_age,
                 model_name=model_name
             )
-            
-            with open(presentation_dir / "zimage_prompts.json", "w") as f:
-                json.dump(prompts_list, f, indent=4)
-                
+            with open(presentation_dir / "master_script.json", "w") as f:
+                json.dump(master_scripts, f, indent=4)
         except Exception as e:
-            logger.error("prompt_batch_generation_failed", error=str(e))
-            prompts_list = [None] * len(presentation.slides)
-
-        # Step 2: Launch Independent Async Tasks for each Slide
+            logger.error("master_script_generation_failed", error=str(e))
+            master_scripts = {}
+        
+        # Step 1: Launch Independent Async Tasks for each Slide
         tasks = []
-        for i, slide in enumerate(presentation.slides):
-            final_prompt = prompts_list[i] if i < len(prompts_list) else None
+        for slide in presentation.slides:
+            script_data = master_scripts.get(slide.slide_number, {})
             # Create a detached task for this slide's entire lifecycle
             task = asyncio.create_task(
-                self.process_single_slide(slide, final_prompt, model_name, voice_gender, voice_age, presentation_dir)
+                self.process_single_slide(slide, script_data, model_name, voice_gender, voice_age, presentation_dir)
             )
             tasks.append(task)
             
-        # Step 3: Wait for all slide tasks to finish
+        # Step 2: Wait for all slide tasks to finish
         slide_results = await asyncio.gather(*tasks)
         
         logger.info("pipeline_complete", output_dir=str(presentation_dir))

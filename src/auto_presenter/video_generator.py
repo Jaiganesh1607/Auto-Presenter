@@ -22,8 +22,9 @@ class SadTalkerClient:
             
         logger.info("calling_sadtalker_api", url=self.endpoint, audio=audio_path.name, image=avatar_image_path.name)
         
-        # We need a large timeout as SadTalker can take 30-60 seconds to render video
-        timeout = httpx.Timeout(180.0, connect=60.0)
+        # We need an infinite timeout as SadTalker can easily take >5 minutes to render a 45s video,
+        # especially if multiple slides are queued up on the Kaggle GPU.
+        timeout = httpx.Timeout(None)
         
         try:
             with open(audio_path, "rb") as audio_file, open(avatar_image_path, "rb") as image_file:

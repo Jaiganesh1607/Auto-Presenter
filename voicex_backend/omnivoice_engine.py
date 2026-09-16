@@ -88,7 +88,7 @@ class OmniVoiceEngine:
             dtype=_dtype,
         )
         self.loaded    = True
-        print("[OmniVoice] ✅ Model loaded successfully.")
+        print("[OmniVoice] Model loaded successfully.")
 
     # ------------------------------------------------------------------ #
     #  Voice Design                                                      #

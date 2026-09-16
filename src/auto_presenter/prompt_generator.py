@@ -11,22 +11,52 @@ class PromptGenerator:
         self.llm_client = llm_client
         
         self.system_prompt = (
-            "You are an expert prompt engineer specializing in generating prompts for Z-Image-Turbo. "
-            "Your goal is to generate prompts that create stunning, highly informative presentation slides in the EXACT visual style of NotebookLM infographics. "
+            "You are an expert prompt engineer specializing in generating prompts for Z-Image-Turbo (a state-of-the-art diffusion model). "
+            "Your goal is to generate prompts that perfectly replicate the official NotebookLM presentation visual style, focusing specifically on how it brilliantly combines Text and Visuals. "
             "Follow these STRICT rules:\n"
-            "1. Aesthetic (CRITICAL): Always start the prompt with: 'NotebookLM visual style, highly detailed infographic. Flat 2D vector line-art, strict isometric projection.'\n"
-            "2. Background & Framing: Explicitly require: 'A solid, clean cream background with absolutely NO grid lines and NO graph paper. The content is framed by minimalist UI wireframe boxes and sharp, thin black borders, resembling a clean digital workspace.'\n"
-            "3. Color Palette: Enforce the NotebookLM palette: 'Crisp white, deep black, light blue, and vibrant orange accents.'\n"
-            "4. Visual Storytelling & Density (CRITICAL): The slide MUST have high visual density and tell a comprehensive story. DO NOT create sparse, empty diagrams (like a simple timeline with just laptops and dates). Use the wireframe panels to group multiple interacting components (e.g., 'Legacy Mainframes' vs 'Modern Containers').\n"
-            "5. Zero Spelling Errors (CRITICAL): Z-Image-Turbo fails on long sentences. You MUST simplify all text into extremely short, common 2-3 word labels (e.g., 'Dev Laptop', 'Cloud Server', 'Legacy System'). However, these labels MUST be descriptive enough to explain the concept (e.g., don't just label '1970s', label it 'Legacy Mainframes'). DO NOT ask for full sentences.\n\n"
-            "You will be given a list of slides. You MUST return a STRICT JSON array of strings, where each string is the prompt for the corresponding slide in order. Do not wrap it in any other objects.\n\n"
+            "1. Aesthetic (CRITICAL): The images MUST look like premium NotebookLM technical blueprints. Start every prompt with: 'NotebookLM visual style, highly detailed academic infographic.' Then, choose between 'Stunning 3D isometric technical schematic' OR 'Flat 2D vector architectural blueprint'.\n"
+            "2. Background & Framing: Explicitly require: 'A clean cream/off-white background with a faint, subtle light-blue engineering graph-paper grid.'\n"
+            "3. Text + Visual Layout (CRITICAL): You MUST structurally divide the canvas into a 'Text Zone' and a 'Visual Zone' (do not overlap them). For example: 'On the left side, large bold text... On the right side, a complex 3D diagram...' OR 'Across the top, a massive title banner... In the center below, a technical blueprint...'\n"
+            "4. Z-Image Text Constraints: Z-Image-Turbo can render text if it is large, short, and well-placed. In the Text Zone, request exactly 1 massive bold Title (e.g., 'KUBERNETES') and 1 or 2 short, punchy subtitles/labels (e.g., 'Self-Healing Infrastructure'). NEVER ask for paragraphs.\n"
+            "5. Visual Zone Metaphors: In the Visual Zone, describe the vibrant tech accents (cyan glass, magenta chips, golden platforms, or navy line-art) forming the core diagram that visually represents the text.\n"
+            "6. Avatar Safe Zone (CRITICAL): The bottom-right quadrant of EVERY image MUST be completely empty (negative space). Explicitly add this to every prompt: 'The bottom-right corner is left completely empty as negative space with no objects or text.'\n\n"
+            "You will be given a single slide's content. You MUST return ONLY the raw prompt string. Do not wrap it in JSON or any other objects.\n\n"
             "Example Input:\n"
-            "Slide 1: Dependency Hell\n"
-            "Text: The Pain: Modern apps require complex specific configs.\n"
-            "Concept: A laptop connected to a server with tangled red wires.\n\n"
+            "Title: Dependency Hell\n"
+            "Key Points: Modern apps require complex specific configs.\n"
+            "Visual Metaphor / Concept: A laptop connected to a server with tangled red wires.\n\n"
             "Example Output:\n"
-            "[\"NotebookLM visual style, highly detailed infographic. Flat 2D vector line-art, strict isometric projection. A solid, clean cream background with absolutely NO grid lines. The content is framed by minimalist UI wireframe boxes and sharp, thin black borders, resembling a clean digital workspace. Color palette: crisp white, deep black, light blue, and vibrant orange accents. A large, bold monospace title at the top says exactly: \\\"The Problem\\\". Visual Storytelling layout: On the left, inside a wireframe box labeled exactly \\\"Dev Laptop\\\", sits an isometric laptop. On the right, inside a wireframe box labeled exactly \\\"Cloud Server\\\", sits an isometric server rack. Between them is a massive, chaotic tangle of bright red wires. A floating orange label on the wires says exactly: \\\"Dependency Hell\\\". A sharp rectangular box at the bottom says exactly: \\\"Complex Configs\\\".\"]"
+            "NotebookLM visual style, highly detailed academic infographic. Stunning 3D isometric technical schematic. A clean cream background with a faint, subtle light-blue engineering graph-paper grid. On the left side (Text Zone), a massive, bold navy-blue title says exactly: \"MULTI-CLOUD\". Below it, a clean subtitle says exactly: \"Strategic Architecture\". On the right side (Visual Zone), a beautiful 3D isometric diagram of floating translucent cyan glass servers connected to bright magenta processing chips sitting on golden-yellow platforms. Deep navy-blue architectural lines connect the components. The bottom-right corner is left completely empty as negative space with no objects or text."
         )
+
+    async def generate_prompt_for_slide(self, slide, model_name: str = "gpt-4o") -> str:
+        """Generates a highly creative prompt for a single slide to prevent repetitive batch patterns."""
+        logger.info("generating_single_prompt", slide_number=slide.slide_number)
+        
+        content = "\n".join([f"- {b}" for b in slide.bullet_points])
+        user_content = (
+            "Generate a highly creative, specific prompt for the following presentation slide. "
+            "Make sure to strictly follow the NotebookLM layout rules, keep text to a minimum, and output ONLY the raw prompt string.\n\n"
+            f"Title: {slide.title}\n"
+            f"Key Points:\n{content}\n"
+            f"Visual Metaphor / Concept: {slide.visual_concept}\n"
+        )
+        
+        request = ChatRequest(
+            model=model_name,
+            messages=[
+                ChatMessage(role="system", content=self.system_prompt),
+                ChatMessage(role="user", content=user_content)
+            ],
+            temperature=0.8, # Increased temperature to force more creativity and variety between slides
+            max_tokens=600
+        )
+        
+        response = await self.llm_client.complete(request)
+        
+        # Clean up the output string
+        prompt = response.content.strip().strip('"').strip("'")
+        return prompt
 
     async def generate_prompts_batch(self, slides: list, model_name: str = "gpt-4o") -> list[str]:
         """Takes a list of SlideOutline objects, batches them, and returns a list of prompts via a single LLM call."""

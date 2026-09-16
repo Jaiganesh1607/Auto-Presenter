@@ -13,6 +13,7 @@ from src.auto_presenter.script_generator import ScriptGenerator
 from src.auto_presenter.audio_generator import VoiceXClient
 from src.auto_presenter.video_generator import SadTalkerClient
 from src.auto_presenter.pptx_composer import PPTXComposerClient
+from src.auto_presenter.video_composer import VideoComposerClient
 
 logger = structlog.get_logger(__name__)
 
@@ -46,7 +47,7 @@ async def main(topic: str, num_slides: int, voice_gender: str):
         output_dir=output_dir
     )
     
-    model_name = "meta/llama-3.1-8b-instruct"
+    model_name = "poolside/laguna-xs-2.1"
     
     # 2. Get the real outline via the Presentation Engine (Phase 1.5)
     logger.info("generating_presentation_outline", topic=topic)
@@ -69,6 +70,10 @@ async def main(topic: str, num_slides: int, voice_gender: str):
     # Generate PPTX
     pptx_client = PPTXComposerClient()
     pptx_client.build_presentation(presentation, slide_results, final_output_dir)
+    
+    # Generate Master MP4 Video
+    video_composer = VideoComposerClient()
+    video_composer.build_master_video(slide_assets=slide_results, output_dir=final_output_dir)
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Auto-Presenter Pipeline CLI")

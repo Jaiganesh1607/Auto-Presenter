@@ -135,6 +135,12 @@ class EmotionEngine:
 
         # Adjust speed for age
         final_speed = base.speed * _age_speed_factor(age)
+        
+        # BUG FIX: OmniVoice male voices sound highly robotic and synthetic if slowed down.
+        # We enforce a base speed of 1.0 for males, while keeping the 0.85 for females.
+        if gender.lower() == "male":
+            final_speed = 1.0 * _age_speed_factor(age)
+
         final_speed = round(max(0.60, min(1.50, final_speed)), 3)
 
         return EmotionParams(

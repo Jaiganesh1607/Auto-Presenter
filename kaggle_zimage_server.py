@@ -11,6 +11,7 @@ import io
 import torch
 import gc
 import numpy as np
+import queue
 from PIL import Image
 
 # 1. Install dependencies
@@ -50,13 +51,23 @@ print("Loading Z-Image Turbo Model into GPU... This may take a few minutes...")
 pipe = ZImagePipeline.from_pretrained(
     "Tongyi-MAI/Z-Image-Turbo",
     torch_dtype=torch.bfloat16,
-    low_cpu_mem_usage=True,
+    low_cpu_mem_usage=False,
 )
-pipe.enable_model_cpu_offload()
+pipe.enable_sequential_cpu_offload()
 print("Model loaded successfully!")
 
-# 3. Initialize FastAPI
+# 3. Initialize FastAPI and Queue Worker
 app = FastAPI(title="Z-Image Turbo API")
+job_queue = queue.Queue()
+
+def queue_worker():
+    while True:
+        job_id, req = job_queue.get()
+        _generate_worker(job_id, req)
+        job_queue.task_done()
+
+# Start the single background worker that processes jobs one by one
+threading.Thread(target=queue_worker, daemon=True).start()
 
 @app.post("/generate", response_model=JobResponse)
 async def generate_image(req: ImageRequest):
@@ -68,8 +79,8 @@ async def generate_image(req: ImageRequest):
     job_id = str(uuid.uuid4())
     JOBS[job_id] = {"status": "processing", "image_base64": None, "error": None}
     
-    # Offload the heavy generation to a background thread to instantly return the job_id
-    threading.Thread(target=_generate_worker, args=(job_id, req), daemon=True).start()
+    # Put the job in the queue to be processed one at a time
+    job_queue.put((job_id, req))
     
     return JobResponse(job_id=job_id)
 

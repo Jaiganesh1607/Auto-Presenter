@@ -10,22 +10,26 @@ class ScriptGenerator:
         self.llm_client = llm_client
         self.system_prompt = (
             "You are an expert presentation scriptwriter and Voice Director.\n"
-            "Your task is to take the provided raw 'speaker_notes' and rewrite them into a natural, "
-            "highly engaging spoken script tailored for an AI avatar.\n"
+            "Your task is to write a cohesive, continuous master script for an entire presentation based on the raw speaker notes.\n"
             "CRITICAL RULES:\n"
-            "1. EXPRESSIONS: You MUST NOT use any non-verbal expression tags (like [laughter], [sigh], etc). SadTalker cannot animate them properly. Generate pure speech only.\n"
-            "2. PACING: Keep sentences short and conversational.\n"
-            "3. EMOTION: Determine the overall emotional tone of this slide. You MUST strictly output 'Neutral'. (Other emotions cause audio artifacts for this specific avatar).\n"
-            "4. Output format: You MUST return a strictly valid JSON object with EXACTLY two keys:\n"
-            "   - 'script_text' (string): The refined text (pure speech, NO tags).\n"
-            "   - 'emotion' (string): The selected emotional tone."
+            "1. FLOW: The script must flow naturally from one slide to the next (e.g. use transitions like 'Moving on to...', 'As we just saw...').\n"
+            "2. EXPRESSIONS: You are ENCOURAGED to use inline expression tags natively supported by OmniVoice: [laughter], [sigh], [breath], [gasps], [clears throat].\n"
+            "3. INSTRUCT: For each slide, write a custom voice `instruct` string to guide the AI Voice model. It MUST start with the speaker's gender and age, followed by emotional descriptors (e.g. 'female, young adult, highly excited, fast pacing', or 'male, middle-aged, whispering calmly').\n"
+            "4. OUTPUT FORMAT: You MUST return a strictly valid JSON array of objects. Each object must have EXACTLY three keys:\n"
+            "   - 'slide_number' (integer): The slide number.\n"
+            "   - 'script_text' (string): The refined, natural speech for that slide (including inline expression tags).\n"
+            "   - 'instruct' (string): The custom voice design instruct string for this segment."
         )
 
-    async def generate_script(self, speaker_notes: str, model_name: str = "gpt-4o") -> dict:
-        """Refines speaker notes into a VoiceX-compatible script and extracts the emotion."""
-        logger.info("generating_refined_script")
+    async def generate_master_script(self, presentation, voice_gender: str, voice_age: int, model_name: str = "gpt-4o") -> dict:
+        """Refines all speaker notes into a continuous flowing script and custom voice instructions."""
+        logger.info("generating_master_script", total_slides=len(presentation.slides))
         
-        user_message = f"Raw Speaker Notes:\n{speaker_notes}\n\nRewrite this into an engaging avatar script."
+        user_message = f"Base Voice Profile: {voice_gender}, Age {voice_age}\n\n"
+        for slide in presentation.slides:
+            user_message += f"Slide {slide.slide_number}: {slide.title}\nRaw Notes: {slide.speaker_notes}\n\n"
+            
+        user_message += "Rewrite these into a continuous, highly engaging avatar script with natural transitions between slides. Output a JSON array."
         
         request = ChatRequest(
             model=model_name,
@@ -34,14 +38,31 @@ class ScriptGenerator:
                 ChatMessage(role="user", content=user_message)
             ],
             temperature=0.7,
-            response_format={"type": "json_object"}
+            max_tokens=2048
         )
         
         try:
             response = await self.llm_client.complete(request)
-            parsed_json = json_repair.repair_json(response.content, return_objects=True)
-            return parsed_json
+            parsed_array = json_repair.repair_json(response.content, return_objects=True)
+            
+            # Convert array to a dictionary mapped by slide_number for easy access
+            script_dict = {}
+            if isinstance(parsed_array, list):
+                for item in parsed_array:
+                    s_num = item.get("slide_number")
+                    if s_num is not None:
+                        script_dict[s_num] = {
+                            "script_text": item.get("script_text", ""),
+                            "instruct": item.get("instruct", f"{voice_gender}, clear articulation")
+                        }
+            return script_dict
         except Exception as e:
-            logger.error("script_generation_failed", error=str(e))
-            # Fallback to the raw speaker notes if the LLM fails
-            return {"script_text": speaker_notes, "emotion": "Neutral"}
+            logger.error("master_script_generation_failed", error=str(e))
+            # Fallback
+            script_dict = {}
+            for slide in presentation.slides:
+                script_dict[slide.slide_number] = {
+                    "script_text": slide.speaker_notes,
+                    "instruct": f"{voice_gender}, professional"
+                }
+            return script_dict

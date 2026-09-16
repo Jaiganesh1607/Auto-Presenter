@@ -5,12 +5,60 @@ from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 from src.auto_presenter.schemas import PresentationOutline
+import win32com.client
+import pythoncom
 
 logger = structlog.get_logger(__name__)
 
 class PPTXComposerClient:
     def __init__(self):
         pass
+
+    def apply_autoplay_settings(self, pptx_path: Path, slide_assets: list):
+        """Uses Windows COM automation to modify the PPTX to auto-advance and auto-play."""
+        logger.info("applying_pptx_autoplay_settings", pptx=str(pptx_path))
+        try:
+            pythoncom.CoInitialize()
+            powerpoint = win32com.client.Dispatch("PowerPoint.Application")
+            
+            # Open without window to prevent flashing if possible
+            # args: FileName, ReadOnly, Untitled, WithWindow
+            presentation = powerpoint.Presentations.Open(str(pptx_path.absolute()), False, False, False)
+            
+            # Moviepy to get exact video durations
+            try:
+                from moviepy import VideoFileClip
+            except ImportError:
+                from moviepy.editor import VideoFileClip
+            
+            for idx, slide in enumerate(presentation.Slides):
+                # 1-indexed in PowerPoint COM
+                slide_number, bg_path, video_path, avatar_image_path = slide_assets[idx]
+                
+                if video_path and video_path.exists():
+                    vclip = VideoFileClip(str(video_path))
+                    duration_sec = vclip.duration
+                    vclip.close()
+                else:
+                    duration_sec = 5.0 # fallback
+                
+                # 1. Slide Auto-Advance
+                slide.SlideShowTransition.AdvanceOnTime = True
+                slide.SlideShowTransition.AdvanceTime = duration_sec + 0.5 # 0.5s buffer
+                
+                # 2. Video Auto-Play (msoMedia = 16)
+                for shape in slide.Shapes:
+                    if shape.Type == 16:
+                        shape.AnimationSettings.PlaySettings.PlayOnEntry = True
+                        break
+                        
+            presentation.Save()
+            presentation.Close()
+            logger.info("autoplay_settings_applied_successfully")
+        except Exception as e:
+            logger.error("win32com_autoplay_failed", error=str(e))
+        finally:
+            pythoncom.CoUninitialize()
 
     def build_presentation(self, outline: PresentationOutline, slide_assets: list, output_dir: Path):
         """
@@ -31,7 +79,7 @@ class PPTXComposerClient:
         blank_slide_layout = prs.slide_layouts[6] 
         
         for idx, slide_outline in enumerate(outline.slides):
-            slide_number, bg_path, video_path = slide_assets[idx]
+            slide_number, bg_path, video_path, avatar_image_path = slide_assets[idx]
             
             slide = prs.slides.add_slide(blank_slide_layout)
             
@@ -41,60 +89,22 @@ class PPTXComposerClient:
             else:
                 logger.warning("pptx_missing_background", slide=slide_number)
             
-            # 2. Add Text Backdrop (Semi-transparent black box on the left)
-            left = Inches(0.5)
-            top = Inches(0.5)
-            width = Inches(5.5)
-            height = Inches(4.625)
+            # Note: The AI-generated background image serves as the complete visual slide.
+            # We intentionally omit adding any overlapping text boxes to keep the visual clean.
             
-            backdrop = slide.shapes.add_shape(
-                1, # msoShapeRectangle
-                left, top, width, height
-            )
-            backdrop.fill.solid()
-            backdrop.fill.fore_color.rgb = RGBColor(0, 0, 0)
-            backdrop.line.fill.background()
-            # Note: python-pptx doesn't natively support setting transparency via simple API yet, 
-            # so this will be solid black.
-            
-            # 3. Add Title Text
-            txBox = slide.shapes.add_textbox(left + Inches(0.2), top + Inches(0.2), width - Inches(0.4), Inches(1))
-            tf = txBox.text_frame
-            tf.word_wrap = True
-            
-            p = tf.add_paragraph()
-            p.text = slide_outline.title
-            p.font.bold = True
-            p.font.size = Pt(32)
-            p.font.color.rgb = RGBColor(255, 255, 255)
-            
-            # 4. Add Bullet Points
-            bullet_top = top + Inches(1.5)
-            bulletBox = slide.shapes.add_textbox(left + Inches(0.2), bullet_top, width - Inches(0.4), height - Inches(1.7))
-            btf = bulletBox.text_frame
-            btf.word_wrap = True
-            
-            for point in slide_outline.bullet_points:
-                bp = btf.add_paragraph()
-                bp.text = f"• {point}"
-                bp.font.size = Pt(20)
-                bp.font.color.rgb = RGBColor(255, 255, 255)
-                # bp.level = 0
-            
-            # 5. Add SadTalker Avatar Video
+            # 5. Add SadTalker Avatar Video (Small talking head in the bottom right corner)
             if video_path and video_path.exists():
-                video_left = Inches(6.5)
-                video_top = Inches(2.125)
-                video_width = Inches(3.0)
-                video_height = Inches(3.0)
+                video_width = Inches(1.8)
+                video_height = Inches(1.8)
+                video_left = Inches(10.0) - video_width - Inches(0.2)
+                video_top = Inches(5.625) - video_height - Inches(0.2)
                 
-                # Add the movie. The poster_frame is required by PowerPoint to show a thumbnail.
-                # We can use the avatar_image or the background as a fallback.
-                # We'll just leave it None and let PowerPoint use the first frame if possible.
                 try:
+                    # By passing poster_frame_image, PowerPoint will show the avatar image instead of a speaker icon!
                     slide.shapes.add_movie(
                         str(video_path), 
-                        video_left, video_top, video_width, video_height, 
+                        video_left, video_top, video_width, video_height,
+                        poster_frame_image=str(avatar_image_path),
                         mime_type='video/mp4'
                     )
                 except Exception as e:
@@ -106,4 +116,8 @@ class PPTXComposerClient:
         output_pptx = output_dir / "final_presentation.pptx"
         prs.save(str(output_pptx))
         logger.info("pptx_composition_complete", file=str(output_pptx))
+        
+        # Apply Auto-Play Settings!
+        self.apply_autoplay_settings(output_pptx, slide_assets)
+        
         return output_pptx
